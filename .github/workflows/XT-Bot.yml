@@ -48,7 +48,7 @@ jobs:
           cd Python
           pip install -r requirements.txt
 
-      - name: Sync Data from DATA_XT_BOT
+      - name: Sync Data from DATA-XT-BOT
         run: |
           python Python/utils/sync_data.py pull
 
@@ -81,16 +81,16 @@ jobs:
           cd Python/src
           python T-Bot.py
 
-      - name: Sync Data to DATA_XT_BOT
+      - name: Sync Data to DATA-XT-BOT
         run: |
           python Python/utils/sync_data.py push
 
-      - name: Commit & Push DATA_XT_BOT
+      - name: Commit & Push DATA-XT-BOT
         run: |
           cd data-repo
           git add .
           if [ -n "$(git status --porcelain)" ]; then
-            git commit -m "chore: Auto-update from XT_BOT [skip ci]"
+            git commit -m "chore: Auto-update from XT-BOT [skip ci]"
             git push origin main
           else
             echo "No changes detected. Skipping commit and push."

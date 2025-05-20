@@ -218,8 +218,16 @@ class DownloadManager:
 
         except Exception as e:
             download_info['download_attempts'] = current_attempts + 1
-            error_msg = f"✗ 下载失败: {item['file_name']} - {str(e)}"
+            e_str = str(e)
+            # 根据长度动态截断错误信息
+            if len(e_str) > 40:
+                modified_e = e_str[:40] + "***"  # 超过40字符则截断并加***
+            else:
+                modified_e = e_str
+            error_msg = f"✗ 下载失败: {item['file_name']} - {modified_e}"
             logger.error(error_msg)
+            debug_msg = f"✗ 下载失败: {item['file_name']} - {e_str}"
+            logger.debug(debug_msg)
 
             if download_info['download_attempts'] >= Config.MAX_DOWNLOAD_ATTEMPTS:
                 item['upload_info'] = {
