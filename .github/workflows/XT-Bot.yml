@@ -2,8 +2,8 @@ name: XT-Bot
 
 on:
   workflow_dispatch:      # 允许手动触发
-  schedule:
-    - cron: '20,50 * * * *'  # 每30分钟运行
+#  schedule:
+#    - cron: '20,50 * * * *'  # 每30分钟运行
 
 jobs:
   auto-process:
@@ -11,20 +11,22 @@ jobs:
     env:
       TZ: Asia/Shanghai
     steps:
-      - name: Checkout code
+      - name: Checkout XT-BOT
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.GH_TOKEN }}  # 使用你设置的 secret
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Checkout XT-DATA
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ github.repository_owner }}/XT-DATA
+          token: ${{ secrets.GH_TOKEN }}
+          path: data-repo
 
       - name: Setup Git
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Create directories
-        run: |
-          mkdir -p Python/{dataBase,downloads,logs,output}
-          mkdir -p TypeScript/{data,logs,resp,tweets}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
@@ -45,6 +47,16 @@ jobs:
         run: |
           cd Python
           pip install -r requirements.txt
+
+      - name: Sync Data from DATA_XT_BOT
+        run: |
+          python Python/utils/sync_data.py pull
+
+      - name: Create directories
+        run: |
+          mkdir -p Artifact
+          mkdir -p Python/{dataBase,downloads,logs,output}
+          mkdir -p TypeScript/{data,logs,resp,tweets}
 
       - name: Run fetch script
         env:
@@ -69,18 +81,32 @@ jobs:
           cd Python/src
           python T-Bot.py
 
-      - name: Upload Response Artifacts
+      - name: Sync Data to DATA_XT_BOT
+        run: |
+          python Python/utils/sync_data.py push
+
+      - name: Commit & Push DATA_XT_BOT
+        run: |
+          cd data-repo
+          git add .
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -m "chore: Auto-update from XT_BOT [skip ci]"
+            git push origin main
+          else
+            echo "No changes detected. Skipping commit and push."
+          fi
+
+      - name: Encrypt with py7zr
+        env:
+          ARTIFACT_PASS: ${{ secrets.ARTIFACT_PASS }}
+          TARGET_DIRS: "Python/logs,TypeScript/logs,TypeScript/resp"
+          OUTPUT_7Z: "Artifact/encrypted_${{ github.run_id }}.7z"
+        run: |
+          python Python/utils/encrypt_7z.py "$TARGET_DIRS" "$OUTPUT_7Z" "$ARTIFACT_PASS"
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: network-responses-${{ github.run_id }}  # 唯一标识
-          path: |
-            Python/logs/
-            TypeScript/logs/
-            TypeScript/resp/
+          name: workflow_${{ github.run_id }}
+          path: Artifact/
           retention-days: 7  # 自动清理
-
-      - name: Commit and push changes
-        run: |
-          git add Python/dataBase Python/output TypeScript/data TypeScript/tweets
-          git commit -m "chore: update user data [skip ci]" || exit 0
-          git push

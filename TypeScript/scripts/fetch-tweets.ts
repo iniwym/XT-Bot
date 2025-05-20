@@ -517,7 +517,7 @@ function transformTweet(
     const createdAt = safeGet('tweet.legacy.createdAt', '');
     const beijingTime = convertToBeijingTime(createdAt);
     if (!beijingTime.isValid()) {
-        console.log('🕒 时间解析失败:', createdAt);
+        console.warn('🕒 时间解析失败:', createdAt);
         return null;
     }
     const publishTime = beijingTime.format('YYYY-MM-DDTHH:mm:ss');
@@ -555,7 +555,7 @@ function transformTweet(
     /* 推文URL构造 */
     const tweetId = safeGet('tweet.legacy.idStr', '');
     if (!tweetId || !user.screenName) {
-        console.log(`❌ 无效推文结构`);
+        console.warn(`❌ 无效推文结构`);
         return null;
     }
     const tweetUrl = `https://x.com/${user.screenName}/status/${tweetId}`;

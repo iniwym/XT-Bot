@@ -5,6 +5,17 @@ import path from 'path';
 import fs from "fs-extra";
 import {get} from 'lodash'; // 添加lodash.get安全访问
 import dayjs from "dayjs";
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
+
+// 配置时区插件
+dayjs.extend(utc);
+dayjs.extend(timezone);
+const TZ_BEIJING = 'Asia/Shanghai';
+
+const FOLLOWING_DATA_PATH = path.resolve(__dirname, '../data/followingUser.json');
+const LAST_UPDATED_PATH = path.resolve(__dirname, '../data/updatedInfo.txt');
+const UPDATE_INTERVAL_HOURS = 6;
 
 export async function processHomeTimeline() {
     console.log(`----- ----- ----- ----- fetch-following begin ----- ----- ----- -----`);
@@ -106,11 +117,14 @@ export async function processHomeTimeline() {
             a.legacy.screenName.localeCompare(b.legacy.screenName)
         );
 
-        const outputPath = `../data/followingUser.json`;
         // 确保目录存在
-        fs.ensureDirSync(path.dirname(outputPath));
-        await fs.writeFile(outputPath, JSON.stringify(simplifiedUsers, null, 2));
-        console.log(`✅ 精简数据完成，已保存至: ${outputPath}`);
+        fs.ensureDirSync(path.dirname(FOLLOWING_DATA_PATH));
+        await fs.writeFile(FOLLOWING_DATA_PATH, JSON.stringify(simplifiedUsers, null, 2));
+        console.log(`✅ 精简数据完成，已保存至: ${FOLLOWING_DATA_PATH}`);
+
+        console.log(`🔄 正在保存更新元数据...`);
+        fs.ensureDirSync(path.dirname(LAST_UPDATED_PATH));
+        await fs.writeFile(LAST_UPDATED_PATH, dayjs().tz(TZ_BEIJING).format('YYYY-MM-DD HH:mm:ss'));
 
     } catch (error) {
         console.error('处理失败:', error.message);
@@ -120,8 +134,47 @@ export async function processHomeTimeline() {
 
 }
 
+async function shouldFetchNewData() {
+    try {
+        // 检查数据文件是否存在
+        if (!await fs.pathExists(FOLLOWING_DATA_PATH)) {
+            console.log('关注列表不存在');
+            return true;
+        }
+
+        // 检查更新时间记录文件
+        if (!await fs.pathExists(LAST_UPDATED_PATH)) {
+            console.log('关注列表更新记录不存在');
+            return true;
+        }
+
+        // 读取最后更新时间
+        const lastUpdated = (await fs.readFile(LAST_UPDATED_PATH, 'utf8')).trim();
+        // 使用北京时区解析的自定义格式
+        const lastUpdatedBJ = dayjs.tz(lastUpdated, 'YYYY-MM-DD HH:mm:ss', TZ_BEIJING);
+        // 计算基于北京时间的时间差
+        const hoursDiff = dayjs().tz(TZ_BEIJING).diff(lastUpdatedBJ, 'hour');
+
+        if (hoursDiff >= UPDATE_INTERVAL_HOURS) {
+            console.log(`关注列表距离上次更新已过 ${hoursDiff} 小时，需要执行`);
+            return true;
+        }
+
+        console.log(`关注列表距离上次更新仅 ${hoursDiff} 小时，跳过执行`);
+        return false;
+    } catch (error) {
+        console.warn('关注列表更新条件检查异常:', error.message);
+        return true;
+    }
+}
+
 export async function main() {
     try {
+        if (!await shouldFetchNewData()) {
+            console.log('⏭️ 跳过关注列表更新流程');
+            return;
+        }
+
         await processHomeTimeline();
     } catch (error) {
         if (error.message.startsWith("DATA_INVALID")) {

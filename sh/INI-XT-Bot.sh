@@ -86,14 +86,14 @@ EOD
 
   # 下载产物
   echo "📦 下载到集中存储目录..."
-  gh run download ${RUN_ID} -n "network-responses-${RUN_ID}" -D "${ARTIFACTS_DIR}/${RUN_ID}" 2>&1
+  gh run download ${RUN_ID} -n "workflow_${RUN_ID}" -D "${ARTIFACTS_DIR}/${RUN_ID}" 2>&1
 
   # 结果验证
   local RESP_DIR="${ARTIFACTS_DIR}/${RUN_ID}/"
   if [[ -d "${RESP_DIR}" ]]; then
     echo "✅ 文件已保存至：${RESP_DIR}"
   else
-    echo "⚠️  目录结构异常：${ARTIFACTS_DIR}/${RUN_ID}"
+    echo "⚠️ "
     exit 5
   fi
 }

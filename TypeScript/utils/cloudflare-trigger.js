@@ -9,6 +9,12 @@ async function triggerGitHubAction() {
     const token = GITHUB_PAT;
     const workflowName = WORKFLOW_NAME;
 
+    // 环境变量验证
+    if (!githubUser || !repoName || !token || !workflowName) {
+        console.error('环境变量未正确配置');
+        return;
+    }
+
     const url = `https://api.github.com/repos/${githubUser}/${repoName}/actions/workflows/${workflowName}/dispatches`;
 
     try {

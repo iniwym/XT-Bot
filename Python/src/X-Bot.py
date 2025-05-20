@@ -1,8 +1,13 @@
 import sys
 import json
-import logging
-from datetime import datetime, timedelta
 import os
+from datetime import datetime, timedelta
+from pathlib import Path
+
+# 将项目根目录添加到模块搜索路径
+_project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(_project_root))
+from utils.log_utils import LogUtils
 
 
 # --------------------
@@ -18,7 +23,6 @@ class Config:
     # 路径配置
     DEFAULT_INPUT_DIR = "../../TypeScript/tweets/"  # 默认输入目录
     DEFAULT_OUTPUT_DIR = "../output/"  # 默认输出目录
-    DEFAULT_LOG_DIR = "../logs/"  # 默认日志目录
 
     # 日期格式
     DATE_FORMAT = "%Y-%m-%d %H:%M:%S"  # 时间戳格式
@@ -26,39 +30,9 @@ class Config:
     YEAR_MONTH = "%Y-%m"  # 年月格式
 
 
-# --------------------
-# 日志配置
-# --------------------
-def configure_logging():
-    """配置日志格式和级别"""
-    log_dir = Config.DEFAULT_LOG_DIR
-    date_format = Config.DATE_FORMAT
-
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-
-    log_filename = f"python-{datetime.now().strftime('%Y-%m-%d')}.log"
-    log_filepath = os.path.join(log_dir, log_filename)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format='[%(asctime)s] [%(levelname)-5s] %(message)s',
-        datefmt=date_format,
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler(log_filepath, encoding='utf-8')
-        ]
-    )
-    logger = logging.getLogger(__name__)
-    if not os.path.exists(log_dir):
-        logger.info(f"📁 创建日志目录: {log_dir}")
-
-    logger.info("🔄 X-Bot 初始化完成")
-    return logger
-
-
-logger = configure_logging()
-
+# 引入日志模块
+logger = LogUtils().get_logger()
+logger.info("🔄 X-Bot 初始化完成")
 
 # --------------------
 # 分片管理器
@@ -478,14 +452,14 @@ def main():
     # 错误参数处理
     else:
         logger.error("❗ 参数错误！支持以下模式：")
-        logger.info("1. 全参数模式：脚本 + 数据文件 + 输出文件")
-        logger.info("2. 单文件模式：脚本 + 数据文件（输出到当天目录）")
-        logger.info("3. 自动模式：仅脚本（处理最近一周数据）")
-        logger.info("示例：")
-        logger.info(
+        logger.error("1. 全参数模式：脚本 + 数据文件 + 输出文件")
+        logger.error("2. 单文件模式：脚本 + 数据文件（输出到当天目录）")
+        logger.error("3. 自动模式：仅脚本（处理最近一周数据）")
+        logger.error("示例：")
+        logger.error(
             "python X-Bot.py ../../TypeScript/tweets/2000-01/2000-01-01.json ../output/2000-01/2000-01-01.json")
-        logger.info("python X-Bot.py ../../TypeScript/tweets/user/xxx.json")
-        logger.info("python X-Bot.py")
+        logger.error("python X-Bot.py ../../TypeScript/tweets/user/xxx.json")
+        logger.error("python X-Bot.py")
         sys.exit(1)
 
 
@@ -494,7 +468,7 @@ if __name__ == "__main__":
         main()
         logger.info("🏁 所有处理任务已完成！")
     except KeyboardInterrupt:
-        logger.info("⏹️ 用户中断操作")
+        logger.warning("⏹️ 用户中断操作")
         sys.exit(0)
     except Exception as e:
         logger.error(f"💥 未处理的异常: {str(e)}")

@@ -315,14 +315,14 @@ function transformTweet(item: any): EnrichedTweet | null {
         const createdAt = get(item, 'tweet.legacy.createdAt');
 
         if (!userIdStr || !screenName || !createdAt) {
-            console.log('🛑 数据缺失，跳过条目');
+            console.warn('🛑 数据缺失，跳过条目');
             return null;
         }
 
         // 时间转换
         const beijingTime = convertToBeijingTime(createdAt);
         if (!beijingTime.isValid()) {
-            console.log('🕒 时间解析失败:', createdAt);
+            console.warn('🕒 时间解析失败:', createdAt);
             return null;
         }
         const fullText = get(item, 'tweet.legacy.fullText', '');

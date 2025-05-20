@@ -1,12 +1,16 @@
+import sys
 import json
 import os
-import logging
 import subprocess
+import telegram
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
 
-import telegram
+# 将项目根目录添加到模块搜索路径
+_project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(_project_root))
+from utils.log_utils import LogUtils
 
 
 # --------------------------
@@ -24,7 +28,6 @@ class PathConfig:
     CONFIG_PATH = Path("../../config/config.json")  # 配置文件路径
     OUT_PUT_DIR = Path("../output/")  # 用户数据目录
     USER_DATA_DIR = Path("../../TypeScript/tweets/user/")  # 用户数据目录
-    LOG_DIR = Path("../logs/")  # 日志目录
 
 
 class MsgConfig:
@@ -32,39 +35,9 @@ class MsgConfig:
     TELEGRAM_ALERT = "#{screen_name} #x"  # Telegram通知模板
 
 
-# --------------------------
-# 日志配置
-# --------------------------
-def configure_logging() -> logging.Logger:
-    """
-    配置日志系统
-    返回预配置的Logger对象
-    """
-    # 确保日志目录存在
-    PathConfig.LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-    # 生成带日期的日志文件名
-    log_file = PathConfig.LOG_DIR / f"python-{datetime.now().strftime('%Y-%m-%d')}.log"
-
-    # 配置基础设置
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(asctime)s] [%(levelname)-5s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[
-            logging.FileHandler(log_file, encoding="utf-8"),
-            logging.StreamHandler()
-        ]
-    )
-
-    # 获取自定义Logger
-    logger = logging.getLogger("INI-XT-Bot")
-    logger.info("🔄 INI-XT-Bot 初始化完成")
-    return logger
-
-
-# 初始化全局日志对象
-logger = configure_logging()
+# 引入日志模块
+logger = LogUtils().get_logger()
+logger.info("🔄 INI-XT-Bot 初始化完成")
 
 
 # --------------------------
@@ -112,7 +85,7 @@ def send_lark_alert(message: str) -> bool:
     返回发送状态: True成功 / False失败
     """
     if not EnvConfig.LARK_KEY:
-        logger.debug("⏭️ 未配置飞书机器人，跳过通知")
+        logger.warning("⏭️ 未配置飞书机器人，跳过通知")
         return False
 
     try:
@@ -204,8 +177,15 @@ def process_user(screen_name: str) -> int:
                 output='\n'.join(output_lines)
             )
 
-        # 解析倒数第二行作为结果
-        new_count = int(output_lines[-2]) if output_lines else 0
+        if output_lines:
+            if len(output_lines) > 1:
+                # 解析倒数第二行作为结果
+                new_count = int(output_lines[-2])
+            else:
+                # 解析倒数第一行作为结果
+                new_count = int(output_lines[-1])
+        else:
+            new_count = 0
         logger.info(f"✅ X-Bot执行成功，用户 {screen_name} 处理完成，新增 {new_count} 条")
         return new_count
 
@@ -218,7 +198,7 @@ def process_user(screen_name: str) -> int:
         logger.error(f"⚠️ 无效的输出内容: {output_lines[-2][:200]}")
         return 0
     except Exception as e:
-        logger.error(f"🚨 未知错误: {str(e)}")
+        logger.error(f"🚨 X-Bot未知错误: {str(e)}")
         return 0
 
 
@@ -266,7 +246,7 @@ def trigger_tbot() -> bool:
         send_lark_alert(error_msg)
         return False
     except Exception as e:
-        logger.error(f"🚨 未知错误: {str(e)}")
+        logger.error(f"🚨 T-Bot未知错误: {str(e)}")
         return False
 
 

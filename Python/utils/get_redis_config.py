@@ -3,22 +3,31 @@ import json
 import sys
 import redis
 from redis.exceptions import RedisError
+from pathlib import Path
+
+# 将项目根目录添加到模块搜索路径
+_project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(_project_root))
+from utils.log_utils import LogUtils
+
+logger = LogUtils().get_logger()
+logger.info("🔄 Get_Redis_Config 初始化完成")
 
 
 def main():
     # 获取环境变量
     redis_config = os.environ.get('REDIS_CONFIG')
     if not redis_config:
-        print("ℹ 未配置 REDIS_CONFIG，直接使用本地配置文件")
+        logger.warning("ℹ 未配置 REDIS_CONFIG，直接使用本地配置文件")
         sys.exit(0)
-    print("✓ 已读取环境变量 REDIS_CONFIG")
+    logger.info("✓ 已读取环境变量 REDIS_CONFIG")
 
     # 解析Redis配置
     try:
         config = json.loads(redis_config)
-        print("✓ Redis配置解析成功")
+        logger.info("✓ Redis配置解析成功")
     except json.JSONDecodeError as e:
-        print(f"⚠ 警告：Redis配置JSON格式错误（{e}），使用本地配置")
+        logger.warning(f"⚠ 警告：Redis配置JSON格式错误（{e}），使用本地配置")
         sys.exit(0)
 
     # 建立并验证Redis连接
@@ -34,24 +43,24 @@ def main():
 
         # 主动发送PING命令验证连接和认证
         r.ping()
-        print("✓ Redis连接验证通过")
+        logger.info("✓ Redis连接验证通过")
     except RedisError as e:
-        print(f"⚠ 警告：Redis连接失败（{e}），使用本地配置")
+        logger.warning(f"⚠ 警告：Redis连接失败（{e}），使用本地配置")
         sys.exit(0)
 
     # 读取配置数据
     config_data = r.get('config')
     if not config_data:
-        print("⚠ 警告：Redis中未找到'config'键值，使用本地配置")
+        logger.warning("⚠ 警告：Redis中未找到'config'键值，使用本地配置")
         sys.exit(0)
-    print("✓ 成功读取配置数据")
+    logger.info("✓ 成功读取配置数据")
 
     # 解析配置数据
     try:
         json_obj = json.loads(config_data)
-        print("✓ 配置数据格式验证成功")
+        logger.info("✓ 配置数据格式验证成功")
     except json.JSONDecodeError as e:
-        print(f"⚠ 警告：配置数据JSON格式错误（{e}），使用本地配置")
+        logger.warning(f"⚠ 警告：配置数据JSON格式错误（{e}），使用本地配置")
         sys.exit(0)
 
     # 写入配置文件
@@ -60,9 +69,9 @@ def main():
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(json_obj, f, indent=2, ensure_ascii=False)
-        print(f"✓ 配置文件已生成：{os.path.abspath(file_path)}")
+        logger.info(f"✓ 配置文件已生成：{os.path.abspath(file_path)}")
     except IOError as e:
-        print(f"⚠ 警告：文件写入失败（{e}），使用现有配置")
+        logger.warning(f"⚠ 警告：文件写入失败（{e}），使用现有配置")
         sys.exit(0)
 
 

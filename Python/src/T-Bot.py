@@ -2,11 +2,15 @@ import sys
 import json
 import os
 import requests
-import logging
+import telegram
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-import telegram
+
+# 将项目根目录添加到模块搜索路径
+_project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(_project_root))
+from utils.log_utils import LogUtils
 
 
 # --------------------------
@@ -20,7 +24,6 @@ class Config:
     # 文件路径
     DEFAULT_DOWNLOAD_DIR = "../downloads"
     DEFAULT_OUTPUT_DIR = "../output"
-    DEFAULT_LOG_DIR = "../logs/"  # 默认日志目录
 
     # Telegram配置 (保持原始限制)
     TELEGRAM_LIMITS = {
@@ -56,39 +59,9 @@ class MaxAttemptsError(Exception):
     pass
 
 
-# --------------------
-# 日志配置
-# --------------------
-def configure_logging():
-    """配置日志格式和级别"""
-    log_dir = Config.DEFAULT_LOG_DIR
-    date_format = Config.DATE_FORMAT
-
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-
-    log_filename = f"python-{datetime.now().strftime('%Y-%m-%d')}.log"
-    log_filepath = os.path.join(log_dir, log_filename)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format='[%(asctime)s] [%(levelname)-5s] %(message)s',
-        datefmt=date_format,
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler(log_filepath, encoding='utf-8')
-        ]
-    )
-    logger = logging.getLogger(__name__)
-    if not os.path.exists(log_dir):
-        logger.info(f"📁 创建日志目录: {log_dir}")
-
-    logger.info("🔄 T-Bot 初始化完成")
-    return logger
-
-
-logger = configure_logging()
-
+# 引入日志模块
+logger = LogUtils().get_logger()
+logger.info("🔄 T-Bot 初始化完成")
 
 # --------------------------
 # 通知模块 (保持原始飞书逻辑)
@@ -511,10 +484,10 @@ def main():
         batch_process()
     else:
         logger.error("错误：参数数量不正确。")
-        logger.info("使用方法：python T-Bot.py [<JSON文件路径> <下载目录>]")
-        logger.info("示例：")
-        logger.info("使用参数：python T-Bot.py ../output/2000-01/2000-01-01.json ../downloads(默认)")
-        logger.info("使用默认：python T-Bot.py")
+        logger.error("使用方法：python T-Bot.py [<JSON文件路径> <下载目录>]")
+        logger.error("示例：")
+        logger.error("使用参数：python T-Bot.py ../output/2000-01/2000-01-01.json ../downloads(默认)")
+        logger.error("使用默认：python T-Bot.py")
         sys.exit(1)
 
 
@@ -523,7 +496,7 @@ if __name__ == "__main__":
         main()
         logger.info("🏁 所有处理任务已完成！")
     except KeyboardInterrupt:
-        logger.info("⏹️ 用户中断操作")
+        logger.warning("⏹️ 用户中断操作")
         sys.exit(0)
     except Exception as e:
         logger.error(f"💥 未处理的异常: {str(e)}")
