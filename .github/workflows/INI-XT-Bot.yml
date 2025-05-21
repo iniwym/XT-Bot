@@ -21,11 +21,6 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           path: data-repo
 
-      - name: Setup Git
-        run: |
-          git config --global user.name "GitHub Actions Bot"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
@@ -88,6 +83,8 @@ jobs:
           cd data-repo
           git add .
           if [ -n "$(git status --porcelain)" ]; then
+            git config --global user.name "GitHub Actions Bot"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
             git commit -m "chore: Auto-update from XT-BOT [skip ci]"
             git push origin main
           else

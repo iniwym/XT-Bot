@@ -1,0 +1,23 @@
+name: KeepActionActivity
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 1 * *'
+
+jobs:
+  auto-process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout XT-BOT
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Commit & Push XT-Bot
+        if: github.event_name == 'schedule'
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "Keep Action Activity..."
+          git push origin main
