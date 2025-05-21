@@ -34,7 +34,7 @@ class Config:
 
     # 业务参数
     MAX_DOWNLOAD_ATTEMPTS = 10  # 保持原始重试次数
-    NOTIFICATION_TRUNCATE = 200  # 通知消息截断长度
+    NOTIFICATION_TRUNCATE = 40  # 通知消息截断长度
 
     @classmethod
     def get_env_vars(cls) -> Dict[str, str]:
@@ -218,16 +218,8 @@ class DownloadManager:
 
         except Exception as e:
             download_info['download_attempts'] = current_attempts + 1
-            e_str = str(e)
-            # 根据长度动态截断错误信息
-            if len(e_str) > 40:
-                modified_e = e_str[:40] + "***"  # 超过40字符则截断并加***
-            else:
-                modified_e = e_str
-            error_msg = f"✗ 下载失败: {item['file_name']} - {modified_e}"
+            error_msg = f"✗ 下载失败: {item['file_name']} - {str(e)[:Config.NOTIFICATION_TRUNCATE]}"
             logger.error(error_msg)
-            debug_msg = f"✗ 下载失败: {item['file_name']} - {e_str}"
-            logger.debug(debug_msg)
 
             if download_info['download_attempts'] >= Config.MAX_DOWNLOAD_ATTEMPTS:
                 item['upload_info'] = {

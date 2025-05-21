@@ -34,6 +34,8 @@ class MsgConfig:
     """消息模板"""
     TELEGRAM_ALERT = "#{screen_name} #x"  # Telegram通知模板
 
+    NOTIFICATION_TRUNCATE = 40  # 通知消息截断长度
+
 
 # 引入日志模块
 logger = LogUtils().get_logger()
@@ -190,7 +192,7 @@ def process_user(screen_name: str) -> int:
         return new_count
 
     except subprocess.CalledProcessError as e:
-        error_msg = f"❌ 用户 {screen_name} 处理失败: {e.output.splitlines()[-1][:200]}"
+        error_msg = f"❌ 用户 {screen_name} 处理失败: {e.output.splitlines()[-1][:MsgConfig.NOTIFICATION_TRUNCATE]}"
         logger.error(error_msg)
         send_lark_alert(error_msg)
         return 0
