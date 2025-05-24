@@ -34,8 +34,6 @@ class MsgConfig:
     """消息模板"""
     TELEGRAM_ALERT = "#{screen_name} #x"  # Telegram通知模板
 
-    NOTIFICATION_TRUNCATE = 40  # 通知消息截断长度
-
 
 # 引入日志模块
 logger = LogUtils().get_logger()
@@ -81,30 +79,6 @@ def send_telegram_alert(screen_name: str) -> bool:
         return False
 
 
-def send_lark_alert(message: str) -> bool:
-    """
-    发送飞书告警通知
-    返回发送状态: True成功 / False失败
-    """
-    if not EnvConfig.LARK_KEY:
-        logger.warning("⏭️ 未配置飞书机器人，跳过通知")
-        return False
-
-    try:
-        webhook_url = f"https://open.feishu.cn/open-apis/bot/v2/hook/{EnvConfig.LARK_KEY}"
-        payload = {
-            "msg_type": "text",
-            "content": {"text": f"🔔 INI-XT-Bot告警\n{message}"}
-        }
-        resp = requests.post(webhook_url, json=payload, timeout=10)
-        resp.raise_for_status()
-        logger.info("📨 飞书告警发送成功")
-        return True
-    except Exception as e:
-        logger.error(f"❌ 飞书通知发送失败: {str(e)}")
-        return False
-
-
 # --------------------------
 # 核心逻辑
 # --------------------------
@@ -136,7 +110,7 @@ def load_config() -> List[str]:
         return []
 
 
-def process_user(screen_name: str) -> int:
+def trigger_xbot(screen_name: str) -> int:
     """
     处理单个用户数据
     返回新增条目数
@@ -147,9 +121,9 @@ def process_user(screen_name: str) -> int:
         logger.warning(f"⏭️ 用户数据文件不存在: {data_file}")
         return 0
 
-    logger.info("🚀 触发X-Bot执行")
-
     try:
+        logger.info("🚀 触发X-Bot执行")
+
         # 执行X-Bot处理（实时显示日志）
         process = subprocess.Popen(
             ["python", "-u", "X-Bot.py", str(data_file)],
@@ -192,12 +166,7 @@ def process_user(screen_name: str) -> int:
         return new_count
 
     except subprocess.CalledProcessError as e:
-        error_msg = f"❌ 用户 {screen_name} 处理失败: {e.output.splitlines()[-1][:MsgConfig.NOTIFICATION_TRUNCATE]}"
-        logger.error(error_msg)
-        send_lark_alert(error_msg)
-        return 0
-    except ValueError:
-        logger.error(f"⚠️ 无效的输出内容: {output_lines[-2][:200]}")
+        logger.error(f"❌ X-Bot处理 用户 {screen_name} 处理失败: {e.output.splitlines()[-1][:200]}")
         return 0
     except Exception as e:
         logger.error(f"🚨 X-Bot未知错误: {str(e)}")
@@ -219,7 +188,7 @@ def trigger_tbot() -> bool:
     try:
         logger.info("🚀 触发T-Bot执行")
 
-        # 实时显示T-Bot输出
+        # 执行T-Bot处理（实时显示日志）
         process = subprocess.Popen(
             ["python", "-u", "T-Bot.py", str(json_path)],
             stdout=subprocess.PIPE,
@@ -243,9 +212,7 @@ def trigger_tbot() -> bool:
         logger.info("✅ T-Bot执行成功")
         return True
     except subprocess.CalledProcessError as e:
-        error_msg = f"❌ T-Bot执行失败: {str(e)}"
-        logger.error(error_msg)
-        send_lark_alert(error_msg)
+        logger.error(f"❌ T-Bot执行失败: {str(e)}")
         return False
     except Exception as e:
         logger.error(f"🚨 T-Bot未知错误: {str(e)}")
@@ -267,7 +234,7 @@ def main():
     total_new = 0
     for screen_name in users:
         logger.info(f"\n{'=' * 40}\n🔍 开始处理: {screen_name}")
-        new_count = process_user(screen_name)
+        new_count = trigger_xbot(screen_name)
 
         # 处理新增条目
         if new_count > 0:
@@ -276,7 +243,7 @@ def main():
 
         # 触发下游流程
         if not trigger_tbot():
-            send_lark_alert(f"触发T-Bot失败 - 用户: {screen_name}")
+            logger.error(f"❌ 触发T-Bot失败 - 用户: {screen_name}")
 
         total_new += new_count
         logger.info(f"✅ 处理完成\n{'=' * 40}\n")

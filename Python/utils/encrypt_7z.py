@@ -46,7 +46,7 @@ if __name__ == '__main__':
 
     # 检查密码是否为空或仅包含空格
     if not password.strip():
-        logger.warning('⚠ 密码为空，不执行日志打包。')
+        logger.warning('⚠ 密码为空，不执行压缩加密操作。')
         sys.exit(0)
 
     compress_folders(dirs, output_file, password)

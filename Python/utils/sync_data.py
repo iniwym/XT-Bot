@@ -21,7 +21,7 @@ def sync_dirs(source, dest):
 
     # 确保源目录存在
     if not os.path.exists(source):
-        raise FileNotFoundError(f"Source directory '{source}' does not exist")
+        raise FileNotFoundError(f"源目录不存在：'{source}'")
 
     # 收集源目录中的所有文件相对路径
     source_files = set()
@@ -48,7 +48,7 @@ def sync_dirs(source, dest):
                 continue  # 文件相同，跳过复制
 
         shutil.copy2(src_path, dest_path)
-        logger.debug(f"📥 Copied: {src_path} -> {dest_path}")
+        logger.debug(f"📥 已复制：{src_path} -> {dest_path}")
 
     # 收集目标目录中的所有文件相对路径
     dest_files = set()
@@ -63,7 +63,7 @@ def sync_dirs(source, dest):
         file_path = os.path.join(dest, file_rel)
         try:
             os.remove(file_path)
-            logger.debug(f"🗑️ Deleted: {file_path}")
+            logger.debug(f"🗑️ 已删除：{file_path}")
         except Exception as e:
             logger.error(f"⚠ 删除文件失败：{file_path} - {str(e)}")
 
@@ -73,7 +73,7 @@ def sync_dirs(source, dest):
         if not os.listdir(root):
             try:
                 os.rmdir(root)
-                logger.debug(f"📁 Removed empty directory: {root}")
+                logger.debug(f"📁 已删除空目录：{root}")
             except Exception as e:
                 logger.error(f"⚠ 删除目录失败：{root} - {str(e)}")
 
@@ -105,7 +105,7 @@ def main():
         nargs='?',  # 设置为可选参数
         default='pull',
         choices=TASK_GROUPS.keys(),
-        help="选择同步任务组 (默认: %(default)s)"
+        help="选择同步任务组(pull/push)"
     )
 
     args = parser.parse_args()

@@ -18,8 +18,9 @@ from utils.log_utils import LogUtils
 # --------------------------
 class Config:
     """全局配置类"""
-    # 日志配置
-    DATE_FORMAT = "%Y-%m-%d %H:%M:%S"  # 时间戳格式
+    # 时间格式
+    MESSAGE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+    INFO_DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
     # 文件路径
     DEFAULT_DOWNLOAD_DIR = "../downloads"
@@ -73,7 +74,7 @@ class Notifier:
 
     @staticmethod
     def send_lark_message(message: str) -> bool:
-        """发送普通飞书消息（无告警前缀）"""
+        """发送普通飞书消息"""
         lark_key = Config.get_env_vars()['lark_key']
         if not lark_key:
             return False
@@ -82,7 +83,7 @@ class Notifier:
         try:
             payload = {
                 "msg_type": "text",
-                "content": {"text": f"📢 动态更新\n{message}"}  # 自定义友好前缀
+                "content": {"text": f"📢 动态更新\n{message}"}
             }
             response = requests.post(webhook_url, json=payload, timeout=10)
             response.raise_for_status()
@@ -176,7 +177,7 @@ class DownloadManager:
                     "success": True,
                     "size": 0,
                     "size_mb": 0,
-                    "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                    "timestamp": datetime.now().strftime(Config.INFO_DATE_FORMAT),
                     "download_attempts": 0
                 }
             })
@@ -192,7 +193,7 @@ class DownloadManager:
             item['upload_info'] = cls._build_error_info(
                 MaxAttemptsError("连续下载失败10次"),
                 "max_download_attempts",
-                existing_info=item.get('upload_info', {})  # 关键：传递已有信息
+                existing_info=item.get('upload_info', {})
             )
             return
 
@@ -212,7 +213,7 @@ class DownloadManager:
                 "success": True,
                 "size": file_size,
                 "size_mb": round(file_size / 1024 / 1024, 2),
-                "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                "timestamp": datetime.now().strftime(Config.INFO_DATE_FORMAT),
                 "download_attempts": 0  # 重置计数器
             })
             item['is_downloaded'] = True
@@ -220,16 +221,20 @@ class DownloadManager:
 
         except Exception as e:
             download_info['download_attempts'] = current_attempts + 1
+            # error错误信息进行截取
             error_msg = f"✗ 下载失败: {item['file_name']} - {str(e)[:Config.ERROR_TRUNCATE]}"
             logger.error(error_msg)
+            # debug查看完整的错误信息
+            debug_msg = f"✗ 下载失败: {item['file_name']} - {str(e)}"
+            logger.debug(debug_msg)
 
             if download_info['download_attempts'] >= Config.MAX_DOWNLOAD_ATTEMPTS:
                 item['upload_info'] = {
                     "success": False,
                     "error_type": "max_download_attempts",
                     "message": str(e),
-                    "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                    "notification_sent": False  # 标记未通知，后续统一处理
+                    "timestamp": datetime.now().strftime(Config.INFO_DATE_FORMAT),
+                    "notification_sent": False
                 }
 
     @classmethod
@@ -237,14 +242,14 @@ class DownloadManager:
             cls,
             error: Exception,
             error_type: str,
-            existing_info: Optional[Dict[str, Any]] = None  # 传入已有的 upload_info
+            existing_info: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """构建错误信息时保留原有 notification_sent 状态"""
         # 如果已有错误信息且包含时间戳，则复用
         if existing_info and "timestamp" in existing_info:
             timestamp = existing_info["timestamp"]
         else:
-            timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")  # 新时间戳
+            timestamp = datetime.now().strftime(Config.INFO_DATE_FORMAT)
         # 如果已有信息，则继承 notification_sent，否则初始化为 False
         notification_sent = existing_info.get("notification_sent", False) if existing_info else False
 
@@ -253,7 +258,7 @@ class DownloadManager:
             "error_type": error_type,
             "message": str(error),
             "timestamp": timestamp,
-            "notification_sent": notification_sent  # 保留或初始化
+            "notification_sent": notification_sent
         }
 
 
@@ -300,12 +305,12 @@ class UploadManager:
         error_type = upload_info.get('error_type')
 
         if error_type in ['file_too_large', 'max_download_attempts']:
-
-            # 添加通知逻辑
+            # 判断通知标识
             if not upload_info.get('notification_sent'):
+                # 发送告警信息
                 self._send_unrecoverable_alert(item, error_type)
-                upload_info['notification_sent'] = True  # 标记已通知
-
+                # 标记已通知
+                upload_info['notification_sent'] = True
             logger.warning(f"⏭ 跳过不可恢复的错误: {item['file_name']} ({error_type})")
             return False
         # 特殊类型直接上传
@@ -320,16 +325,17 @@ class UploadManager:
             "🔴 推送失败\n"
             f"文件名: {item['file_name']}\n"
             f"类型: {error_type}\n"
+            # 截取错误信息
             f"错误: {item['upload_info']['message'][:Config.ERROR_TRUNCATE]}"
         )
         Notifier.send_lark_alert(alert_msg)
 
     def _send_text_message(self, item: Dict[str, Any]) -> int:
         """发送文本消息到 Telegram 和飞书"""
-        # 生成基础文本（复用原有逻辑）
+        # 生成基础文本
         screen_name = item['user']['screen_name']
         media_type = item['media_type']
-        publish_time = datetime.fromisoformat(item['publish_time']).strftime("%Y-%m-%d %H:%M:%S")
+        publish_time = datetime.fromisoformat(item['publish_time']).strftime(Config.MESSAGE_DATE_FORMAT)
         url = item['url']
         base_text = f"#{screen_name} #{media_type}\n{publish_time}\n{url}"
 
@@ -346,7 +352,7 @@ class UploadManager:
 
         # 同时发送到飞书（如果配置）
         if Config.get_env_vars()['lark_key']:
-            success = Notifier.send_lark_message(truncated)  # 调用新方法
+            success = Notifier.send_lark_message(truncated)
             if success:
                 logger.info(f"✓ 动态消息已同步至飞书")
         return msg.message_id
@@ -376,7 +382,7 @@ class UploadManager:
     def _build_caption(self, item: Dict[str, Any]) -> str:
         """构建caption"""
         user_info = f"#{item['user']['screen_name']} {item['user']['name']}"
-        publish_time = datetime.fromisoformat(item['publish_time']).strftime("%Y-%m-%d %H:%M:%S")
+        publish_time = datetime.fromisoformat(item['publish_time']).strftime(Config.MESSAGE_DATE_FORMAT)
         base_info = f"{user_info}\n{publish_time}"
         remaining = Config.TELEGRAM_LIMITS['caption'] - len(base_info) - 1
 
@@ -395,11 +401,11 @@ class UploadManager:
         return {
             "success": True,
             "message_id": message_id,
-            "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            "timestamp": datetime.now().strftime(Config.INFO_DATE_FORMAT)
         }
 
     def _handle_upload_error(self, error: Exception, item: Dict[str, Any]) -> None:
-        """错误处理 (精确匹配通知规则)"""
+        """错误处理"""
         # 错误类型判断
         if isinstance(error, FileTooLargeError):
             error_type = 'file_too_large'
@@ -426,7 +432,7 @@ class UploadManager:
             "success": False,
             "error_type": error_type,
             "message": str(error),
-            "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "timestamp": datetime.now().strftime(Config.INFO_DATE_FORMAT),
             "notification_sent": False
         }
 

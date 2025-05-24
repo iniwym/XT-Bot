@@ -68,7 +68,7 @@ async function checkActionStatus() {
             // 构造消息
             const message = `🚨 工作流执行状态异常\n` +
                 `执行ID: ${latestRun.id}\n` +
-                `结论: ${latestRun.conclusion || 'unknown'}\n` +
+                `状态: ${latestRun.conclusion || 'unknown'}\n` +
                 `时间: ${timeString}`;
             await sendLarkAlert(larkUrl, message);
         } else {

@@ -3,7 +3,7 @@ import {cleanupLogger} from '../utils/logger';
 import {XAuthClient} from "./utils";
 import path from 'path';
 import fs from "fs-extra";
-import {get} from 'lodash'; // 添加lodash.get安全访问
+import {get} from 'lodash';
 import dayjs from "dayjs";
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
@@ -70,7 +70,7 @@ export async function processHomeTimeline() {
 
             // 转换数据结构
             const validUsers = rawItems
-                .map(item => get(item, 'user', null))  // 使用lodash.get安全取值
+                .map(item => get(item, 'user', null))
                 .filter(user => user && typeof user === 'object');  // 过滤无效用户
 
             if (validUsers.length === 0) {

@@ -19,8 +19,9 @@ class LogUtils:
         """
         self.logger = logging.getLogger(name)
 
-        # 获取项目根目录（向上找两级）
+        # 获取python根目录（向上找两级）
         python_root = Path(__file__).resolve().parent.parent
+        # 获取项目根目录（向上找三级）
         project_root = python_root.parent
         config_path = project_root / "config" / "config.json"
 

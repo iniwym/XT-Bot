@@ -25,7 +25,7 @@ class Config:
     DEFAULT_OUTPUT_DIR = "../output/"  # 默认输出目录
 
     # 日期格式
-    DATE_FORMAT = "%Y-%m-%d %H:%M:%S"  # 时间戳格式
+    DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"  # 时间戳格式
     YEAR_MONTH_DAY = "%Y-%m-%d"  # 年月日格式
     YEAR_MONTH = "%Y-%m"  # 年月格式
 
@@ -33,6 +33,7 @@ class Config:
 # 引入日志模块
 logger = LogUtils().get_logger()
 logger.info("🔄 X-Bot 初始化完成")
+
 
 # --------------------
 # 分片管理器
@@ -404,7 +405,7 @@ def main():
         data_path = os.path.normpath(args[0])
         current_date = datetime.now()
 
-        # 生成当天输出路径（与数据文件日期无关）
+        # 生成当天输出路径
         output_dir = os.path.normpath(
             f"{Config.DEFAULT_OUTPUT_DIR}{current_date.strftime(Config.YEAR_MONTH)}/"
         )

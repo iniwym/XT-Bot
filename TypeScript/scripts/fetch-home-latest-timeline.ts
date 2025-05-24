@@ -44,14 +44,14 @@ interface ProcessConfig {
 export async function processHomeTimeline(client: any, config: ProcessConfig = {}) {
     const startTime = Date.now();
 
-    // 新增配置合并逻辑
+    // 配置合并
     const mergedConfig = await mergeConfigurations(config);
     const {
         outputDir = '../tweets',
         interval = 5000,
         followingPath = '../data/followingUser.json',
-        filterRetweets = true,  // 新增默认值
-        filterQuotes = true      // 新增默认值
+        filterRetweets = true,
+        filterQuotes = true
     } = mergedConfig;
 
     console.log('===== [BEGIN] 首页时间线处理流程 =====\n');

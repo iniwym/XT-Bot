@@ -1,5 +1,5 @@
 #!/bin/bash
-# GitHub Actions 自动化控制器(macOS/Linux)
+# GitHub Actions 自动化控制器
 # 需要安装 GitHub CLI (gh) 并登录 (gh auth login)
 
 # 配置区
@@ -15,47 +15,6 @@ ARTIFACTS_DIR="${SCRIPT_DIR}/../logs/action-artifacts"
 
 # 创建统一目录
 mkdir -p "${ARTIFACTS_DIR}"
-
-# 启动日志监控函数
-start_log_monitor() {
-  local RUN_ID=$1
-  echo "📜 启动日志监控窗口..."
-
-  if [[ "$(uname)" == "Darwin" ]]; then
-    # macOS 方案
-    osascript <<EOF
-tell application "Terminal"
-  activate
-  set tab1 to do script "cd \"${SCRIPT_DIR}\" && gh run watch ${RUN_ID} --exit-status"
-  set current settings of tab1 to settings set "${TERMINAL_THEME}"
-end tell
-EOF
-
-  elif [[ "$(uname)" == "Linux" ]]; then
-    # Linux 终端检测
-    local monitor_cmd="cd \\\"${SCRIPT_DIR}\\\" && gh run watch ${RUN_ID} --exit-status"
-
-    if command -v gnome-terminal &> /dev/null; then
-      gnome-terminal --tab --title="Workflow Monitor" -- bash -c \
-        "eval ${monitor_cmd}; exec bash"
-    elif command -v konsole &> /dev/null; then
-      konsole --new-tab --workdir "${SCRIPT_DIR}" -e bash -c \
-        "eval ${monitor_cmd}; exec bash"
-    elif command -v xterm &> /dev/null; then
-      xterm -geometry 100x30 -hold -e "bash -c 'eval ${monitor_cmd}'" &
-    else
-      echo -e "\033[31m❌ 错误：未找到支持的终端 (请安装以下任一款)：\033[0m" >&2
-      echo "  - gnome-terminal (GNOME 桌面)"
-      echo "  - konsole (KDE 桌面)"
-      echo "  - xterm (基础终端)"
-      exit 1
-    fi
-
-  else
-    echo -e "\033[31m❌ 不支持的系统：$(uname)\033[0m" >&2
-    exit 1
-  fi
-}
 
 # 通用函数：处理手动执行流程
 handle_manual_workflow() {
@@ -90,7 +49,19 @@ handle_manual_workflow() {
   echo "✅ Run ID: ${RUN_ID}"
 
   # 启动日志监控
-  start_log_monitor "$RUN_ID"
+  if [[ "$(uname)" == "Darwin" ]]; then
+  echo "📜 启动日志监控窗口..."
+  osascript <<EOD
+tell application "Terminal"
+  activate
+  set tab1 to do script "cd \"${SCRIPT_DIR}\" && gh run watch ${RUN_ID} --exit-status"
+  set current settings of tab1 to settings set "${TERMINAL_THEME}"
+end tell
+EOD
+  else
+    # 非macOS系统自行扩展
+    echo ""
+  fi
 
   # 监控运行状态（最长2小时）
   echo "⏳ 监控运行状态（最长2小时）..."

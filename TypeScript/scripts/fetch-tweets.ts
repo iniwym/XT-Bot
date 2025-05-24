@@ -360,7 +360,7 @@ async function processTweets(
     console.log(`📈 总计获取: ${totalFetched} 条`);
     console.log(`✅ 合并完成，总计加载 ${fileTweets.length} 条原始推文`);
 
-    // 🚨 需要验证数据一致性（可添加检查）
+    // 🚨 需要验证数据一致性
     if (totalFetched !== fileTweets.length) {
         console.warn(`⚠️ 警告：请求获取数（${totalFetched}）与文件加载数（${fileTweets.length}）不一致`);
     }
