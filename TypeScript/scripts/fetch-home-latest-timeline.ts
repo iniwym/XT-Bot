@@ -406,7 +406,7 @@ async function saveTweets(tweets: EnrichedTweet[], outputDir: string) {
 
     for (const [dateStr, group] of Object.entries(dateGroups)) {
         const monthDir = dayjs(dateStr).format('YYYY-MM');
-        const filePath = path.join(outputDir, monthDir, `${dateStr}.json`);
+        const filePath = path.join(__dirname, outputDir, monthDir, `${dateStr}.json`);
         await saveGroup(filePath, group);
     }
 }

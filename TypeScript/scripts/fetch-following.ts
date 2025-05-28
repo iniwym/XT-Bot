@@ -36,7 +36,7 @@ export async function processHomeTimeline() {
         const userId = userSelf.restId;
 
         const timestamp = dayjs().format('YYYYMMDD-HHmmss');
-        const rawOutputPath = path.join('../resp/respFollowing', `${timestamp}.json`);
+        const rawOutputPath = path.join(__dirname, '../resp/respFollowing', `${timestamp}.json`);
         fs.ensureDirSync(path.dirname(rawOutputPath));
 
         let cursor: string | undefined;

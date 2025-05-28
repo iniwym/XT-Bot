@@ -415,7 +415,7 @@ class UploadManager:
             Notifier.send_lark_alert(
                 f"🔴 上传失败\n文件名: {item['file_name']}\n"
                 f"错误类型: {error.__class__.__name__}\n"
-                f"错误详情: {str(error)[:Config.NOTIFICATION_TRUNCATE]}"
+                f"错误详情: {str(error)[:Config.ERROR_TRUNCATE]}"
             )
 
         # 更新错误信息
@@ -423,7 +423,12 @@ class UploadManager:
 
         # 重置下载状态（允许重试）
         item['is_downloaded'] = False
-        logger.error(f"✗ 上传失败: {item['file_name']} - {error_type}")
+        # error错误信息进行截取
+        error_msg = f"✗ 上传失败: {item['file_name']} - {str(error)[:Config.ERROR_TRUNCATE]}"
+        logger.error(error_msg)
+        # debug查看完整的错误信息
+        debug_msg = f"✗ 上传失败: {item['file_name']} - {str(error)}"
+        logger.debug(debug_msg)
 
     @staticmethod
     def _build_error_info(error: Exception, error_type: str) -> Dict[str, Any]:

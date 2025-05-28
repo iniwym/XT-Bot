@@ -275,6 +275,97 @@ Redis的key键 `config` 内容对应 `XT-Data/config/config.json`
 
 </details>
 
+## 本地部署 📝 
+
+1.前置要求
+
+Python 3.10
+
+Bun 运行时
+
+2.安装依赖
+
+```
+# Bun 依赖
+cd TypeScript
+bun install
+
+# Python 依赖
+cd Python
+pip install -r requirements.txt
+```
+
+3.配置环境变量
+
+设置代理
+
+```bash
+#windows
+set HTTP_PROXY=http://127.0.0.1:1080
+set HTTPS_PROXY=http://127.0.0.1:1080
+
+# macOS/Linux
+export http_proxy=http://127.0.0.1:1080
+export https_proxy=http://127.0.0.1:1080
+```
+
+修改配置文件 `XT-Bot/config/config.json`
+
+项目根目录创建 `.env` 文件,并添加以下内容
+
+```
+# Twitter API
+AUTH_TOKEN=your_twitter_auth_token
+SCREEN_NAME=your_twitter_handle
+
+# Telegram Bot
+BOT_TOKEN=your_telegram_bot_token
+CHAT_ID=your_telegram_chat_id
+
+# 飞书/Lark(可选)
+LARK_KEY=your_lark_webhook_key
+```
+
+4.运行脚本
+
+Twitter API 相关
+
+```bash
+cd TypeScript/scripts/
+
+# 获取用户关注列表
+bun run fetch-following.ts
+
+# 获取主页时间线推文(需获取关注列表进行过滤)
+bun run fetch-home-latest-timeline.ts
+
+# 获取指定用户全量推文(支持多用户)
+bun run fetch-tweets-media.ts
+```
+
+Telegram Bot 相关
+
+```bash
+cd Python/src/
+
+# 处理推文数据
+# 1. 全参数模式：脚本 + 数据文件 + 输出文件
+python X-Bot.py ../../TypeScript/tweets/2000-01/2000-01-01.json ../output/2000-01/2000-01-01.json
+# 2. 单文件模式：脚本 + 数据文件（输出到当天目录）
+python X-Bot.py ../../TypeScript/tweets/user/xxx.json
+# 3. 自动模式：仅脚本（处理最近一周数据）
+python X-Bot.py
+
+# 下载/上传图片和视频
+# 1. 全参数模式：脚本 + 数据文件 + 下载目录
+python T-Bot.py ../output/2000-01/2000-01-01.json ../downloads(默认)
+# 2. 自动模式：仅脚本（处理最近一周数据）
+python T-Bot.py
+
+# 处理指定用户推文(支持多用户)
+python INI-XT-Bot.py
+```
+
 ## 技术参考 📚
 
 - https://github.com/xiaoxiunique/x-kit

@@ -84,8 +84,8 @@ export async function processTweetsByScreenName(
 
         // 步骤2: 定义输出路径 -------------------------------------------------------
         const outputFileName = `${userInfo.screenName}.json`;
-        const finalOutputPath = path.join('../tweets/user/', outputFileName);
-        const rawOutputDir = path.join(outputDir);
+        const finalOutputPath = path.join(__dirname, '../tweets/user/', outputFileName);
+        const rawOutputDir = path.join(__dirname, outputDir);
         // 确保目录存在
         fs.ensureDirSync(path.dirname(finalOutputPath));
         fs.ensureDirSync(rawOutputDir);
@@ -188,7 +188,7 @@ async function getOrFetchUserInfo(
     client: any,
     forceRefresh: boolean
 ): Promise<UserInfo> {
-    const cacheDir = path.join('../resp/cache');
+    const cacheDir = path.join(__dirname, '../resp/cache');
     const cachePath = path.join(cacheDir, `${screenName}.json`);
 
     // 尝试读取缓存

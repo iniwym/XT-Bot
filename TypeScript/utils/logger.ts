@@ -4,6 +4,10 @@ import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 
+require('dotenv').config({
+    path: path.resolve(__dirname, '../../.env')
+});
+
 // 配置时区插件
 dayjs.extend(utc);
 dayjs.extend(timezone);
