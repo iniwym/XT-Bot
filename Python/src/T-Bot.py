@@ -5,7 +5,8 @@ import requests
 import telegram
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple, DefaultDict
+from collections import defaultdict
 
 # 将项目根目录添加到模块搜索路径
 _project_root = Path(__file__).resolve().parent.parent
@@ -30,7 +31,8 @@ class Config:
     TELEGRAM_LIMITS = {
         'images': 10 * 1024 * 1024,  # 10MB
         'videos': 50 * 1024 * 1024,  # 50MB
-        'caption': 1024  # 消息截断长度
+        'caption': 1024,  # 消息截断长度
+        'media_group': 10,  # 媒体分组最多文件数
     }
 
     # 业务参数
@@ -276,8 +278,126 @@ class UploadManager:
         self.bot = telegram.Bot(token=env_vars['bot_token'])
         self.chat_id = env_vars['chat_id']
 
-    def process_item(self, item: Dict[str, Any], processor: FileProcessor) -> None:
-        """处理文件上传"""
+    def process_items(self, items: List[Dict[str, Any]], processor: FileProcessor) -> None:
+        """处理文件上传（支持分组）"""
+        # 分组处理逻辑
+        if all('tweet_id' in item for item in items):
+            self._process_group(items, processor)
+        else:
+            # 对于没有tweet_id的历史数据，按照原逻辑处理
+            for item in items:
+                self._process_single_item(item, processor)
+
+    def _process_group(self, items: List[Dict[str, Any]], processor: FileProcessor) -> None:
+        """处理具有相同tweet_id的一组文件"""
+        # 提取第一个有效item的tweet_id
+        tweet_id = items[0]['tweet_id']
+
+        # 只处理尚未上传的文件
+        pending_items = [item for item in items if not item.get('is_uploaded')]
+        if not pending_items:
+            return
+
+        # 处理特殊类型（单独发送文本消息）
+        text_items = [item for item in pending_items if item.get('media_type') in ['spaces', 'broadcasts']]
+        for item in text_items:
+            self._process_single_item(item, processor)
+            pending_items.remove(item)
+
+        # 准备媒体组上传
+        if pending_items:
+            try:
+                media_group = self._prepare_media_group(pending_items, processor)
+                if not media_group:
+                    logger.debug(f"⏭ 推文 {tweet_id} 无可上传的有效媒体")
+                    return
+
+                # 发送媒体组
+                caption = self._build_caption(pending_items[0])
+                messages = self.bot.send_media_group(
+                    chat_id=self.chat_id,
+                    media=media_group,
+                    caption=caption
+                )
+
+                # 标记上传成功
+                for item, message in zip(pending_items, messages):
+                    if item.get('is_downloaded'):
+                        item.update({
+                            "is_uploaded": True,
+                            "upload_info": self._build_success_info(message.message_id)
+                        })
+                logger.info(f"✅ 媒体推文上传成功: {tweet_id} ({len(media_group)}个文件)")
+
+            except Exception as e:
+                error_msg = f"✗ 媒体推文上传失败: {tweet_id} - {str(e)[:Config.ERROR_TRUNCATE]}"
+                logger.error(error_msg)
+                for item in pending_items:
+                    self._handle_upload_error(e, item)
+
+    def _prepare_media_group(self, items: List[Dict[str, Any]], processor: FileProcessor) -> List:
+        """准备媒体组"""
+        media_group = []
+        for item in items:
+            # 跳过已上传的文件
+            if item.get('is_uploaded'):
+                continue
+
+            # 检查不可恢复的错误
+            if self._has_unrecoverable_error(item):
+                continue
+
+            # 特殊类型跳过媒体组
+            if item.get('media_type') in ['spaces', 'broadcasts']:
+                continue
+
+            try:
+                # 构建媒体类型
+                if item['media_type'] == 'images':
+                    media_item = telegram.InputMediaPhoto(media=self._get_file(item, processor))
+                elif item['media_type'] == 'videos':
+                    media_item = telegram.InputMediaVideo(media=self._get_file(item, processor))
+                else:
+                    logger.warning(f"⏭ 跳过未知媒体类型: {item['media_type']}")
+                    continue
+
+                media_group.append(media_item)
+
+                # 检查媒体组文件数限制
+                if len(media_group) >= Config.TELEGRAM_LIMITS['media_group']:
+                    logger.warning(f"⚠️ 媒体组文件数达到上限: {len(media_group)}")
+                    break
+
+            except Exception as e:
+                # 单个文件上传失败不影响其他文件
+                error_msg = f"✗ 文件准备失败: {item['file_name']} - {str(e)[:Config.ERROR_TRUNCATE]}"
+                logger.error(error_msg)
+                self._handle_upload_error(e, item)
+
+        return media_group
+
+    def _get_file(self, item: Dict[str, Any], processor: FileProcessor) -> Any:
+        """获取文件（内容或路径）"""
+        # 特殊类型直接返回URL
+        if item.get('media_type') in ['spaces', 'broadcasts']:
+            return item['url']
+
+        # 本地文件处理
+        file_path = processor.download_path / item['file_name']
+
+        # 文件大小校验
+        file_size = os.path.getsize(file_path)
+        media_type = item['media_type']
+        if file_size > Config.TELEGRAM_LIMITS[media_type]:
+            raise FileTooLargeError(
+                f"{media_type}大小超标 ({file_size // 1024 // 1024}MB > {Config.TELEGRAM_LIMITS[media_type] // 1024 // 1024}MB)"
+            )
+
+        # 直接返回文件路径
+        return open(file_path, 'rb')
+
+    def _process_single_item(self, item: Dict[str, Any], processor: FileProcessor) -> None:
+        """处理单个文件上传"""
         if not self._should_upload(item):
             return
 
@@ -301,6 +421,16 @@ class UploadManager:
         if item.get('is_uploaded'):
             return False
         # 检查不可恢复的错误
+        if self._has_unrecoverable_error(item):
+            return False
+        # 特殊类型直接上传
+        if item.get('media_type') in ['spaces', 'broadcasts']:
+            return True
+        # 常规类型需要下载成功
+        return item.get('is_downloaded', False)
+
+    def _has_unrecoverable_error(self, item: Dict[str, Any]) -> bool:
+        """检查不可恢复错误"""
         upload_info = item.get('upload_info', {})
         error_type = upload_info.get('error_type')
 
@@ -312,12 +442,8 @@ class UploadManager:
                 # 标记已通知
                 upload_info['notification_sent'] = True
             logger.warning(f"⏭ 跳过不可恢复的错误: {item['file_name']} ({error_type})")
-            return False
-        # 特殊类型直接上传
-        if item.get('media_type') in ['spaces', 'broadcasts']:
             return True
-        # 常规类型需要下载成功
-        return item.get('is_downloaded', False)
+        return False
 
     def _send_unrecoverable_alert(self, item: Dict[str, Any], error_type: str) -> None:
         """发送不可恢复错误通知"""
@@ -455,13 +581,28 @@ def process_single(json_path: str, download_dir: str = Config.DEFAULT_DOWNLOAD_D
         download_manager = DownloadManager()
         upload_manager = UploadManager()
 
+        # 1. 下载所有文件
         for item in data:
-            # 处理顺序：先下载再上传
             if not item.get('is_downloaded'):
                 download_manager.process_item(item, processor)
 
-            if not item.get('is_uploaded'):
-                upload_manager.process_item(item, processor)
+        # 2. 按tweet_id分组数据
+        grouped_items = defaultdict(list)
+        no_tweet_id_items = []
+        for item in data:
+            if 'tweet_id' in item:
+                grouped_items[item['tweet_id']].append(item)
+            else:
+                no_tweet_id_items.append(item)
+
+        # 3. 上传分组内容
+        # 3.1 上传无tweet_id的历史数据（单个上传）
+        for item in no_tweet_id_items:
+            upload_manager.process_items([item], processor)
+
+        # 3.2 上传有tweet_id的组
+        for tweet_id, items in grouped_items.items():
+            upload_manager.process_items(items, processor)
 
         processor.save_data(data)
         logger.info(f"✅ 文件处理完成\n{'-' * 40}\n")

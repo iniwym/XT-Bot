@@ -161,6 +161,7 @@ class EntryProcessor:
     def create_entry_template(filename, user_info, media_type, url):
         """创建标准条目模板"""
         return {
+            "tweet_id": "",
             "file_name": filename,
             "user": {
                 "screen_name": user_info["screen_name"],
@@ -181,6 +182,9 @@ class EntryProcessor:
         """处理单个推文条目"""
         new_entries = []
 
+        # 提取条目中的 tweet_id
+        tweet_id = self._extract_tweet_id(entry.get("tweet_url", ""))
+
         # 处理普通媒体
         new_entries.extend(self._process_media(entry, user_info, processed_ids, "images"))
         new_entries.extend(self._process_media(entry, user_info, processed_ids, "videos"))
@@ -191,6 +195,7 @@ class EntryProcessor:
         # 补充元数据
         for e in new_entries:
             e.update({
+                "tweet_id": tweet_id,
                 "full_text": entry.get("full_text", ""),
                 "publish_time": entry.get("publish_time", "")
             })
@@ -232,6 +237,23 @@ class EntryProcessor:
             logger.debug(f"🔗 发现特殊链接: {media_type} - {filename}")
 
         return entries
+
+    @staticmethod
+    def _extract_tweet_id(tweet_url):
+        """从推文URL提取唯一ID"""
+        if not tweet_url:
+            return ""
+
+        # 查找/status/后的部分作为推文ID
+        parts = tweet_url.split("/status/")
+        if len(parts) > 1:
+            # 获取ID部分，并移除可能存在的查询参数
+            tweet_id = parts[1].split("?")[0].split("/")[0]
+            # 确保ID是纯数字
+            if tweet_id.isdigit():
+                return tweet_id
+
+        return ""
 
     @staticmethod
     def _extract_filename(url):
@@ -347,6 +369,7 @@ class XBotCore:
                 }
 
             organized[username]["entries"].append({
+                "tweet_url": item.get("tweetUrl", ""),
                 "full_text": item.get("fullText", ""),
                 "publish_time": item.get("publishTime", ""),
                 "images": item.get("images", []),
