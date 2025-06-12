@@ -146,11 +146,25 @@ async function paginateTweets(client: any, threshold: dayjs.Dayjs, interval: num
     let rawTweets: any[] = [];
     let pageCount = 0;
     let lastTweetTime: dayjs.Dayjs | null = null;
+    let emptyCount = 0;
 
     do {
         pageCount++;
         const {tweets, newCursor} = await fetchTweetPage(client, cursor, interval, pageCount);
         cursor = newCursor;
+
+        // 处理空页情况
+        if (tweets.length === 0) {
+            emptyCount++;
+            console.log(`⚠️ 空响应计数: ${emptyCount}/3`);
+            if (emptyCount >= 3) {
+                console.log("⏹️ 终止原因：连续3次空响应");
+                break;
+            }
+            continue; // 跳过后续处理
+        } else {
+            emptyCount = 0; // 重置空页计数器
+        }
 
         // 记录最后一条时间
         if (tweets.length > 0) {
@@ -283,11 +297,32 @@ async function loadFollowingUsers(path: string): Promise<Set<string>> {
     try {
         const data = await fs.readJSON(path);
         const ids = data.map((u: any) => u.restId);
+        const extraIds = await loadExtraRestIds();
         console.log(`→ 成功加载 ${ids.length} 个关注用户`);
-        return new Set(ids);
+        return new Set([...ids, ...extraIds]);
     } catch (error) {
         console.error('❌ 加载关注列表失败:', error.message);
         return new Set();
+    }
+}
+
+/** 加载额外临时用户(可选) */
+async function loadExtraRestIds(): Promise<string[]> {
+    const extraIdsPath = path.resolve(__dirname, '../data/restId.txt');
+    try {
+        if (!fs.existsSync(extraIdsPath)) {
+            return [];
+        }
+        const content = await fs.readFile(extraIdsPath, 'utf-8');
+        const extraIds = content
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(line => line.length > 0);
+        console.log(`→ 读取 ${extraIds.length} 个临时用户`);
+        return extraIds;
+    } catch (error) {
+        console.error('⚠️ 读取restId临时文件失败:', error.message);
+        return [];
     }
 }
 

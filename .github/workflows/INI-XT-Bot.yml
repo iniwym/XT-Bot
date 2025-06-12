@@ -105,3 +105,11 @@ jobs:
           name: workflow_${{ github.run_id }}
           path: Artifact/
           retention-days: 7  # 自动清理
+
+      - name: Clean Workflow History
+        uses: Mattraks/delete-workflow-runs@main
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          repository: ${{ github.repository }}
+          retain_days: 7
+          keep_minimum_runs: 0
