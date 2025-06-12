@@ -280,64 +280,78 @@ class UploadManager:
 
     def process_items(self, items: List[Dict[str, Any]], processor: FileProcessor) -> None:
         """处理文件上传（支持分组）"""
+        # 只处理未上传的文件
+        pending_items = [item for item in items if not item.get('is_uploaded')]
+        if not pending_items:
+            logger.debug("⏭ 所有项目已上传，跳过处理")
+            return
+
         # 分组处理逻辑
-        if all('tweet_id' in item for item in items):
-            self._process_group(items, processor)
+        if all('tweet_id' in item for item in pending_items):
+            self._process_group(pending_items, processor)
         else:
             # 对于没有tweet_id的历史数据，按照原逻辑处理
-            for item in items:
+            for item in pending_items:
                 self._process_single_item(item, processor)
 
     def _process_group(self, items: List[Dict[str, Any]], processor: FileProcessor) -> None:
         """处理具有相同tweet_id的一组文件"""
-        # 提取第一个有效item的tweet_id
         tweet_id = items[0]['tweet_id']
-
-        # 只处理尚未上传的文件
-        pending_items = [item for item in items if not item.get('is_uploaded')]
-        if not pending_items:
-            return
+        logger.info(f"🔤 开始处理推文组合: {tweet_id} ({len(items)}个文件)")
 
         # 处理特殊类型（单独发送文本消息）
-        text_items = [item for item in pending_items if item.get('media_type') in ['spaces', 'broadcasts']]
+        text_items = [item for item in items if item.get('media_type') in ['spaces', 'broadcasts']]
         for item in text_items:
             self._process_single_item(item, processor)
-            pending_items.remove(item)
+
+        # 创建文本项ID集合
+        text_item_ids = {id(item) for item in text_items}
 
         # 准备媒体组上传
-        if pending_items:
-            try:
-                media_group = self._prepare_media_group(pending_items, processor)
-                if not media_group:
-                    logger.debug(f"⏭ 推文 {tweet_id} 无可上传的有效媒体")
-                    return
+        try:
+            group_caption = self._build_caption(items[0])
+            # 获取媒体组和包含的原始项
+            media_group, included_items = self._prepare_media_group(items, processor, group_caption)
 
-                # 发送媒体组
-                caption = self._build_caption(pending_items[0])
-                messages = self.bot.send_media_group(
-                    chat_id=self.chat_id,
-                    media=media_group,
-                    caption=caption
+            if not media_group:
+                logger.debug(f"⏭ 推文 {tweet_id} 无可上传的有效媒体")
+                return
+
+            # 发送媒体组
+            messages = self.bot.send_media_group(
+                chat_id=self.chat_id,
+                media=media_group
+            )
+
+            # 确保消息数量匹配
+            if len(messages) != len(included_items):
+                raise ValueError(
+                    f"返回消息数量{len(messages)}与媒体组数量{len(included_items)}不匹配！"
                 )
 
-                # 标记上传成功
-                for item, message in zip(pending_items, messages):
-                    if item.get('is_downloaded'):
-                        item.update({
-                            "is_uploaded": True,
-                            "upload_info": self._build_success_info(message.message_id)
-                        })
-                logger.info(f"✅ 媒体推文上传成功: {tweet_id} ({len(media_group)}个文件)")
+            # 更新状态
+            for idx, msg in enumerate(messages):
+                item = included_items[idx]
+                item.update({
+                    "is_uploaded": True,
+                    "upload_info": self._build_success_info(msg.message_id)
+                })
 
-            except Exception as e:
-                error_msg = f"✗ 媒体推文上传失败: {tweet_id} - {str(e)[:Config.ERROR_TRUNCATE]}"
-                logger.error(error_msg)
-                for item in pending_items:
+            logger.info(f"✅ 媒体推文上传成功: {tweet_id} ({len(media_group)}个文件)")
+
+        except Exception as e:
+            # 错误处理时跳过已处理的文本项
+            for item in items:
+                if not item.get('is_uploaded') and id(item) not in text_item_ids:
                     self._handle_upload_error(e, item)
 
-    def _prepare_media_group(self, items: List[Dict[str, Any]], processor: FileProcessor) -> List:
+    def _prepare_media_group(self, items: List[Dict[str, Any]], processor: FileProcessor, group_caption: str) -> Tuple[
+        List, List[Dict]]:
         """准备媒体组"""
         media_group = []
+        # 存储包含在媒体组中的原始项
+        included_items = []
+
         for item in items:
             # 跳过已上传的文件
             if item.get('is_uploaded'):
@@ -352,16 +366,21 @@ class UploadManager:
                 continue
 
             try:
+                is_first_in_group = len(media_group) == 0
+                caption = group_caption if is_first_in_group else None
+
+                file_obj = self._get_file(item, processor)
                 # 构建媒体类型
                 if item['media_type'] == 'images':
-                    media_item = telegram.InputMediaPhoto(media=self._get_file(item, processor))
+                    media_item = telegram.InputMediaPhoto(file_obj, caption=caption)
                 elif item['media_type'] == 'videos':
-                    media_item = telegram.InputMediaVideo(media=self._get_file(item, processor))
+                    media_item = telegram.InputMediaVideo(file_obj, caption=caption)
                 else:
                     logger.warning(f"⏭ 跳过未知媒体类型: {item['media_type']}")
                     continue
 
                 media_group.append(media_item)
+                included_items.append(item)
 
                 # 检查媒体组文件数限制
                 if len(media_group) >= Config.TELEGRAM_LIMITS['media_group']:
@@ -369,12 +388,12 @@ class UploadManager:
                     break
 
             except Exception as e:
-                # 单个文件上传失败不影响其他文件
-                error_msg = f"✗ 文件准备失败: {item['file_name']} - {str(e)[:Config.ERROR_TRUNCATE]}"
-                logger.error(error_msg)
                 self._handle_upload_error(e, item)
+            finally:
+                if 'file_obj' in locals() and hasattr(file_obj, 'close'):
+                    file_obj.close()
 
-        return media_group
+        return media_group, included_items
 
     def _get_file(self, item: Dict[str, Any], processor: FileProcessor) -> Any:
         """获取文件（内容或路径）"""
