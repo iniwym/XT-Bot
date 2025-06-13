@@ -283,31 +283,37 @@ class UploadManager:
         # 只处理未上传的文件
         pending_items = [item for item in items if not item.get('is_uploaded')]
         if not pending_items:
-            logger.debug("⏭ 所有项目已上传，跳过处理")
             return
 
-        # 分组处理逻辑
-        if all('tweet_id' in item for item in pending_items):
-            self._process_group(pending_items, processor)
-        else:
-            # 对于没有tweet_id的历史数据，按照原逻辑处理
-            for item in pending_items:
-                self._process_single_item(item, processor)
+        tweet_id = pending_items[0]['tweet_id']
 
-    def _process_group(self, items: List[Dict[str, Any]], processor: FileProcessor) -> None:
-        """处理具有相同tweet_id的一组文件"""
-        tweet_id = items[0]['tweet_id']
-        logger.info(f"🔤 开始处理推文组合: {tweet_id} ({len(items)}个文件)")
-
-        # 处理特殊类型（单独发送文本消息）
-        text_items = [item for item in items if item.get('media_type') in ['spaces', 'broadcasts']]
+        # 1. 处理特殊类型（文本项）
+        text_items = [item for item in pending_items
+                      if item.get('media_type') in ['spaces', 'broadcasts']]
         for item in text_items:
             self._process_single_item(item, processor)
 
-        # 创建文本项ID集合
-        text_item_ids = {id(item) for item in text_items}
+        # 2. 处理媒体类型（图片/视频）
+        media_items = [item for item in pending_items
+                       if item.get('media_type') in ['images', 'videos']
+                       and not item.get('is_uploaded')]
 
-        # 准备媒体组上传
+        if not media_items:
+            # 没有媒体文件，跳过
+            return
+
+        # 选择上传策略
+        if len(media_items) == 1:
+            logger.debug(f"↗️ 单文件上传策略: {media_items[0]['file_name']}")
+            self._process_single_item(media_items[0], processor)
+        else:
+            logger.info(f"🖼️ 媒体组上传策略: {tweet_id} (共{len(media_items)}个文件)")
+            self._process_group(media_items, processor)
+
+    def _process_group(self, items: List[Dict[str, Any]], processor: FileProcessor) -> None:
+        """处理媒体组上传"""
+        tweet_id = items[0]['tweet_id']
+
         try:
             group_caption = self._build_caption(items[0])
             # 获取媒体组和包含的原始项
@@ -332,18 +338,25 @@ class UploadManager:
             # 更新状态
             for idx, msg in enumerate(messages):
                 item = included_items[idx]
+                msg_id = msg.message_id
                 item.update({
                     "is_uploaded": True,
-                    "upload_info": self._build_success_info(msg.message_id)
+                    "upload_info": self._build_success_info(msg_id)
                 })
+                logger.info(f"✅ 文件已上传: tweet_id={tweet_id}, 文件名={item['file_name']}, message_id={msg_id}")
 
-            logger.info(f"✅ 媒体推文上传成功: {tweet_id} ({len(media_group)}个文件)")
+            logger.info(f"✅ 媒体组上传成功: {tweet_id} ({len(media_group)}个文件)")
 
         except Exception as e:
-            # 错误处理时跳过已处理的文本项
             for item in items:
-                if not item.get('is_uploaded') and id(item) not in text_item_ids:
+                if not item.get('is_uploaded'):
                     self._handle_upload_error(e, item)
+
+        finally:
+            # 确保关闭所有文件句柄
+            for media_item in media_group:
+                if hasattr(media_item, 'media') and hasattr(media_item.media, 'close'):
+                    media_item.media.close()
 
     def _prepare_media_group(self, items: List[Dict[str, Any]], processor: FileProcessor, group_caption: str) -> Tuple[
         List, List[Dict]]:
@@ -597,30 +610,28 @@ def process_single(json_path: str, download_dir: str = Config.DEFAULT_DOWNLOAD_D
         processor = FileProcessor(json_path, download_dir)
         data = processor.load_data()
 
+        # 1. 按tweet_id分组数据
+        grouped_items = defaultdict(list)
+        for item in data:
+            if 'tweet_id' not in item:
+                logger.error(f"⚠️ 数据项缺少tweet_id: 文件名={item.get('file_name', '未知')}, 跳过")
+                continue
+
+            grouped_items[item['tweet_id']].append(item)
+
         download_manager = DownloadManager()
         upload_manager = UploadManager()
 
-        # 1. 下载所有文件
-        for item in data:
-            if not item.get('is_downloaded'):
-                download_manager.process_item(item, processor)
+        logger.info(f"📊 检测到 {len(grouped_items)} 个推文分组")
 
-        # 2. 按tweet_id分组数据
-        grouped_items = defaultdict(list)
-        no_tweet_id_items = []
-        for item in data:
-            if 'tweet_id' in item:
-                grouped_items[item['tweet_id']].append(item)
-            else:
-                no_tweet_id_items.append(item)
-
-        # 3. 上传分组内容
-        # 3.1 上传无tweet_id的历史数据（单个上传）
-        for item in no_tweet_id_items:
-            upload_manager.process_items([item], processor)
-
-        # 3.2 上传有tweet_id的组
+        # 2. 按分组处理
         for tweet_id, items in grouped_items.items():
+            # 2.1 下载组内所有未下载的文件
+            for item in items:
+                if not item.get('is_downloaded'):
+                    download_manager.process_item(item, processor)
+
+            # 2.2 分组上传策略
             upload_manager.process_items(items, processor)
 
         processor.save_data(data)
