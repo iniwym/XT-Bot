@@ -331,6 +331,7 @@ class UploadManager:
             'single': self._handle_single_media,
             'group': self._handle_media_group
         }
+        self.processor = None  # 文件处理器引用
 
     def _initialize_bot(self):
         """初始化Telegram机器人"""
@@ -345,6 +346,9 @@ class UploadManager:
         """
         处理待上传项的主入口
         """
+        # 保存处理器引用，供后续使用
+        self.processor = processor
+
         # 过滤出可上传的项
         upload_queue = self._filter_uploadable_items(items)
         if not upload_queue:
@@ -447,6 +451,12 @@ class UploadManager:
         tweet_id = items[0]['tweet_id']
         logger.info(f"🖼️ 准备媒体组上传: {tweet_id} ({len(items)}个文件)")
 
+        # 提前检查媒体组大小
+        if self._is_group_size_exceeded(items):
+            logger.warning(f"⚠️ 媒体组过大({self._get_group_size_mb(items)}MB > 50MB)，回退为单文件上传")
+            self._fallback_to_single_upload(items)
+            return
+
         # 构建媒体组
         media_group, included_items = self._prepare_media_group(items, processor)
 
@@ -483,6 +493,65 @@ class UploadManager:
             for media_item in media_group:
                 if hasattr(media_item, 'media') and hasattr(media_item.media, 'close'):
                     media_item.media.close()
+
+    # --------------------------
+    # 媒体组大小检测和回退
+    # --------------------------
+    def _handle_strategy_error(self, error: Exception, items: List[Dict[str, Any]], strategy_type: str) -> None:
+        """处理策略级错误，优化媒体组处理逻辑"""
+        logger.error(f"✗ {strategy_type}策略执行失败: {str(error)[:Config.ERROR_TRUNCATE]}")
+        logger.debug(f"✗ {strategy_type}策略执行失败详情: {str(error)}")
+
+        # 对于媒体组错误，检查大小决定是否回退
+        if strategy_type == 'group' and self._is_group_size_exceeded(items):
+            logger.warning(f"⚠️ 媒体组过大({self._get_group_size_mb(items)}MB > 50MB)，回退为单文件上传")
+            self._fallback_to_single_upload(items)
+        elif strategy_type in ['group', 'text']:
+            # 其他类型的媒体组错误也尝试回退
+            self._fallback_to_single_upload(items)
+
+    def _is_group_size_exceeded(self, items: List[Dict[str, Any]]) -> bool:
+        """检查媒体组总大小是否超过50MB限制"""
+        return self._get_group_size_mb(items) > Config.TELEGRAM_LIMITS['videos'] / (1024 * 1024)
+
+    def _get_group_size_mb(self, items: List[Dict[str, Any]]) -> float:
+        """计算媒体组总大小（MB）"""
+        total_size_bytes = 0
+
+        for item in items:
+            if 'download_info' in item and 'size_mb' in item['download_info']:
+                # 使用已有大小信息
+                total_size_bytes += item['download_info']['size_mb'] * 1024 * 1024
+            else:
+                # 尝试从文件系统获取大小
+                try:
+                    file_path = self.processor.download_path / item['file_name']
+                    if file_path.exists():
+                        total_size_bytes += os.path.getsize(file_path)
+                except Exception:
+                    continue
+
+        return round(total_size_bytes / (1024 * 1024), 2)
+
+    def _fallback_to_single_upload(self, items: List[Dict[str, Any]]) -> None:
+        """回退为单文件上传策略"""
+        logger.info(f"⏮️ 回退为单文件上传: {items[0]['tweet_id']} ({len(items)}个文件)")
+
+        for item in items:
+            if item.get('is_uploaded'):
+                continue
+
+            try:
+                if item['media_type'] in ['spaces', 'broadcasts']:
+                    self._upload_text_item(item)
+                else:
+                    self._upload_media_item(item, self.processor)
+                logger.info(f"✅ 单文件上传成功: {item['file_name']}")
+            except Exception as inner_error:
+                self._update_error_status(inner_error, item)
+                self._reset_download_status(item)
+                logger.error(f"✗ 单文件上传失败: {item['file_name']} - {str(inner_error)[:Config.ERROR_TRUNCATE]}")
+                logger.debug(f"✗ 单文件上传失败详情: {item['file_name']} - {str(inner_error)}")
 
     # --------------------------
     # 实际上传操作
@@ -673,22 +742,6 @@ class UploadManager:
         tweet_id = items[0]['tweet_id'] if items else "未知"
         logger.error(f"✗ 媒体组上传失败: {tweet_id} - {str(error)[:Config.ERROR_TRUNCATE]}")
         logger.debug(f"✗ 媒体组上传失败详情: {tweet_id} - {str(error)}")
-
-    def _handle_strategy_error(self, error: Exception, items: List[Dict[str, Any]], strategy_type: str) -> None:
-        """处理策略级错误"""
-        logger.error(f"✗ {strategy_type}策略执行失败: {str(error)[:Config.ERROR_TRUNCATE]}")
-        logger.debug(f"✗ {strategy_type}策略执行失败详情: {str(error)}")
-        # 尝试回退为单文件上传
-        if strategy_type in ['group', 'text']:
-            for item in items:
-                try:
-                    if item['media_type'] in ['spaces', 'broadcasts']:
-                        self._upload_text_item(item)
-                    else:
-                        self._upload_media_item(item)
-                except Exception as inner_error:
-                    self._update_error_status(inner_error, item)
-                    self._reset_download_status(item)
 
     def _handle_preparation_error(self, error: Exception, item: Dict[str, Any]) -> None:
         """处理媒体组准备过程中的错误"""
