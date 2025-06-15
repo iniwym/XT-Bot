@@ -481,7 +481,7 @@ class UploadManager:
             for msg, item in zip(messages, included_items):
                 msg_id = msg.message_id
                 self._update_upload_status(item, msg_id)
-                logger.info(f"✅ 文件已上传: 文件名={item['file_name']}, message_id={msg_id}")
+                logger.info(f"✅ 上传成功: {item['file_name']}({msg_id})")
 
             logger.info(f"✅ 媒体组上传成功: {tweet_id} ({len(media_group)}个文件)")
 
@@ -546,7 +546,6 @@ class UploadManager:
                     self._upload_text_item(item)
                 else:
                     self._upload_media_item(item, self.processor)
-                logger.info(f"✅ 单文件上传成功: {item['file_name']}")
             except Exception as inner_error:
                 self._update_error_status(inner_error, item)
                 self._reset_download_status(item)
@@ -561,13 +560,14 @@ class UploadManager:
         # 文本型caption构建
         caption = self._build_text_caption(item)
         msg = self.bot.send_message(chat_id=self.chat_id, text=caption)
-        self._update_upload_status(item, msg.message_id)
+        msg_id = msg.message_id
+        self._update_upload_status(item, msg_id)
 
         # 发送飞书通知
         if Config.get_env_vars()['lark_key']:
             Notifier.send_lark_message(caption)
 
-        logger.info(f"✅ 文本消息已上传: {item['file_name']}")
+        logger.info(f"✅ 发送成功: {item['file_name']}({msg_id})")
 
     def _upload_media_item(self, item: Dict[str, Any], processor: FileProcessor) -> None:
         """上传单个媒体文件"""
@@ -580,8 +580,9 @@ class UploadManager:
             else:  # videos
                 msg = self.bot.send_video(chat_id=self.chat_id, video=file_obj, caption=caption)
 
-            self._update_upload_status(item, msg.message_id)
-            logger.info(f"✅ 媒体文件已上传: {item['file_name']}")
+            msg_id = msg.message_id
+            self._update_upload_status(item, msg_id)
+            logger.info(f"✅ 上传成功: {item['file_name']}({msg_id})")
 
     def _prepare_media_group(self, items: List[Dict[str, Any]], processor: FileProcessor
                              ) -> Tuple[List[telegram.InputMedia], List[Dict[str, Any]]]:
