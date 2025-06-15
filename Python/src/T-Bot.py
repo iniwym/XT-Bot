@@ -168,100 +168,154 @@ class DownloadManager:
     @classmethod
     def process_item(cls, item: Dict[str, Any], processor: FileProcessor) -> None:
         """处理单个文件下载"""
+        # 处理特殊类型（spaces/broadcasts）直接返回
+        if cls._is_special_type(item):
+            cls._handle_special_type(item)
+            return
+
+        # 如果已下载或达到最大尝试次数，直接返回
+        if cls._should_skip_download(item):
+            return
+
+        # 执行下载操作
+        try:
+            logger.info(f"⏬ 开始下载: {item['file_name']}")
+            file_path = cls._download_file(item, processor)
+
+            # 处理下载成功
+            size_mb = cls._handle_download_success(item, file_path)
+            logger.info(f"✓ 下载成功: {item['file_name']} ({size_mb}MB)")
+
+        except Exception as e:
+            # 处理下载失败
+            cls._handle_download_failure(item, e)
+
+    @classmethod
+    def _is_special_type(cls, item: Dict[str, Any]) -> bool:
+        """检查是否为特殊类型（spaces/broadcasts）"""
+        return item.get('media_type') in ['spaces', 'broadcasts']
+
+    @classmethod
+    def _handle_special_type(cls, item: Dict[str, Any]) -> None:
+        """处理特殊类型项"""
         if item.get('is_downloaded'):
             return
 
-        # 特殊类型处理
-        if item.get('media_type') in ['spaces', 'broadcasts']:
-            item.update({
-                "is_downloaded": True,
-                "download_info": {
-                    "success": True,
-                    "size": 0,
-                    "size_mb": 0,
-                    "timestamp": datetime.now().strftime(Config.INFO_DATE_FORMAT),
-                    "download_attempts": 0
-                }
-            })
-            logger.info(f"⏭ 跳过特殊类型下载: {item['file_name']}")
-            return
+        item.update({
+            "is_downloaded": True,
+            "download_info": {
+                "success": True,
+                "size_mb": 0,
+                "timestamp": datetime.now().strftime(Config.INFO_DATE_FORMAT),
+                "download_attempts": 0
+            }
+        })
+        logger.info(f"⏭ 跳过特殊类型下载: {item['file_name']}")
 
-        # 重试计数器位置
+    @classmethod
+    def _should_skip_download(cls, item: Dict[str, Any]) -> bool:
+        """检查是否应该跳过下载"""
+        # 已下载的直接跳过
+        if item.get('is_downloaded'):
+            return True
+
         download_info = item.setdefault('download_info', {})
         current_attempts = download_info.get('download_attempts', 0)
 
+        # 达到最大尝试次数
         if current_attempts >= Config.MAX_DOWNLOAD_ATTEMPTS:
-            logger.warning(f"⏭ 已达最大下载尝试次数: {item['file_name']}")
-            item['upload_info'] = cls._build_error_info(
-                MaxAttemptsError("连续下载失败10次"),
-                "max_download_attempts",
-                existing_info=item.get('upload_info', {})
-            )
-            return
+            # 达到最大尝试次数
+            cls._handle_max_attempts(item)
+            return True
 
-        try:
-            logger.info(f"⏬ 开始下载: {item['file_name']}")
-            response = requests.get(item['url'], stream=True, timeout=30)
-            response.raise_for_status()
-
-            file_path = processor.download_path / item['file_name']
-            with open(file_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-
-            # 更新下载状态
-            file_size = os.path.getsize(file_path)
-            download_info.update({
-                "success": True,
-                "size": file_size,
-                "size_mb": round(file_size / 1024 / 1024, 2),
-                "timestamp": datetime.now().strftime(Config.INFO_DATE_FORMAT),
-                "download_attempts": 0  # 重置计数器
-            })
-            item['is_downloaded'] = True
-            logger.info(f"✓ 下载成功: {item['file_name']} ({file_size // 1024}KB)")
-
-        except Exception as e:
-            download_info['download_attempts'] = current_attempts + 1
-            # error错误信息进行截取
-            error_msg = f"✗ 下载失败: {item['file_name']} - {str(e)[:Config.ERROR_TRUNCATE]}"
-            logger.error(error_msg)
-            # debug查看完整的错误信息
-            debug_msg = f"✗ 下载失败: {item['file_name']} - {str(e)}"
-            logger.debug(debug_msg)
-
-            if download_info['download_attempts'] >= Config.MAX_DOWNLOAD_ATTEMPTS:
-                item['upload_info'] = {
-                    "success": False,
-                    "error_type": "max_download_attempts",
-                    "message": str(e),
-                    "timestamp": datetime.now().strftime(Config.INFO_DATE_FORMAT),
-                    "notification_sent": False
-                }
+        return False
 
     @classmethod
-    def _build_error_info(
-            cls,
-            error: Exception,
-            error_type: str,
-            existing_info: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """构建错误信息时保留原有 notification_sent 状态"""
-        # 如果已有错误信息且包含时间戳，则复用
-        if existing_info and "timestamp" in existing_info:
-            timestamp = existing_info["timestamp"]
-        else:
-            timestamp = datetime.now().strftime(Config.INFO_DATE_FORMAT)
-        # 如果已有信息，则继承 notification_sent，否则初始化为 False
-        notification_sent = existing_info.get("notification_sent", False) if existing_info else False
+    def _download_file(cls, item: Dict[str, Any], processor: FileProcessor) -> Path:
+        """执行文件下载操作"""
+        response = requests.get(item['url'], stream=True, timeout=30)
+        response.raise_for_status()
 
-        return {
+        file_path = processor.download_path / item['file_name']
+        with open(file_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        return file_path
+
+    @classmethod
+    def _handle_download_success(cls, item: Dict[str, Any], file_path: Path) -> float:
+        """处理下载成功的情况，返回文件大小（MB）"""
+        file_size = os.path.getsize(file_path)
+        size_mb = round(file_size / 1024 / 1024, 2)
+
+        item.update({
+            "is_downloaded": True,
+            "download_info": {
+                "success": True,
+                "size_mb": size_mb,
+                "timestamp": datetime.now().strftime(Config.INFO_DATE_FORMAT),
+                "download_attempts": 0  # 重置计数器
+            }
+        })
+        return size_mb
+
+    @classmethod
+    def _handle_download_failure(cls, item: Dict[str, Any], error: Exception) -> None:
+        """处理下载失败的情况"""
+        download_info = item.setdefault('download_info', {})
+        current_attempts = download_info.get('download_attempts', 0)
+        new_attempts = current_attempts + 1
+
+        # 更新下载信息
+        download_info.update({
             "success": False,
-            "error_type": error_type,
+            "error_type": "download_error",
             "message": str(error),
-            "timestamp": timestamp,
-            "notification_sent": notification_sent
+            "timestamp": datetime.now().strftime(Config.INFO_DATE_FORMAT),
+            "download_attempts": new_attempts
+        })
+
+        # 错误日志
+        truncated_error = str(error)[:Config.ERROR_TRUNCATE]
+        error_msg = f"✗ 下载失败: {item['file_name']} - {truncated_error} (尝试 {new_attempts}/{Config.MAX_DOWNLOAD_ATTEMPTS})"
+        logger.error(error_msg)
+
+        # 调试日志
+        logger.debug(f"✗ 下载失败详情: {item['file_name']} - {str(error)}")
+
+    @classmethod
+    def _handle_max_attempts(cls, item: Dict[str, Any]) -> None:
+        """处理达到最大尝试次数的情况"""
+        # 准备要设置的默认值
+        new_info = {
+            "success": False,
+            "error_type": "max_download_attempts",
+            "message": "连续下载失败10次",
+            "notification_sent": False
         }
+
+        # 如果已有upload_info，复用其中的某些字段
+        if 'upload_info' in item and isinstance(item['upload_info'], dict):
+            existing_info = item['upload_info']
+
+            # 保留已有的时间戳（如果有）
+            if 'timestamp' in existing_info:
+                new_info['timestamp'] = existing_info['timestamp']
+            else:
+                new_info['timestamp'] = datetime.now().strftime(Config.INFO_DATE_FORMAT)
+
+            # 保留已有的通知状态（如果有）
+            if 'notification_sent' in existing_info:
+                new_info['notification_sent'] = existing_info['notification_sent']
+        else:
+            # 没有已有信息，创建新的时间戳
+            new_info['timestamp'] = datetime.now().strftime(Config.INFO_DATE_FORMAT)
+
+        # 更新或创建upload_info
+        item['upload_info'] = new_info
+
+        logger.warning(f"⏭ 已达最大下载尝试次数: {item['file_name']}")
 
 
 # --------------------------
