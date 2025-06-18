@@ -473,9 +473,12 @@ class UploadManager:
 
             # 验证响应
             if len(messages) != len(included_items):
-                raise ValueError(
-                    f"返回消息数量({len(messages)})与媒体组数量({len(included_items)})不匹配"
+                logger.warning(
+                    f"⚠️ 返回消息数量({len(messages)})与媒体组数量({len(included_items)})不匹配，将回退为单文件上传"
                 )
+                # 使用回退机制处理不匹配情况
+                self._fallback_to_single_upload(included_items)
+                return
 
             # 更新状态
             for msg, item in zip(messages, included_items):

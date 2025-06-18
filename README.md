@@ -161,6 +161,8 @@ REDIS_CONFIG 格式如下：
 
 无需额外的配置,但运行时间可能会存在延迟
 
+启用 `XT-Bot/.github/workflows/KeepActionActivity.yml` 保持项目活跃
+
 修改 `XT-Bot/.github/workflows/XT-Bot.yml` 文件中的下面内容
 
 ```yaml
